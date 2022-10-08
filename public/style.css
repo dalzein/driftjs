@@ -1,0 +1,106 @@
+* {
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+}
+
+body {
+  color: #333;
+  font-family: "Roboto", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  touch-action: none;
+  overflow: hidden;
+}
+
+canvas {
+  position: absolute;
+}
+
+header {
+  max-width: 400px;
+  display: block;
+  margin: auto;
+  top: 20px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  position: absolute;
+}
+
+h1 {
+  margin: 0;
+}
+
+.overlay {
+  z-index: 1;
+}
+
+.car {
+  position: absolute;
+  width: 20px;
+  height: 40px;
+  will-change: transform;
+  margin: 1px;
+}
+
+.car-img {
+  transform: rotate(-90deg);
+  transform-origin: bottom;
+  width: 40px;
+  height: 20px;
+}
+
+.mobile-controls {
+  padding: 0 5px;
+  display: flex;
+  justify-content: space-between;
+  position: absolute;
+  width: 100%;
+  bottom: 5px;
+  display: none;
+}
+
+.controls-right,
+.controls-left {
+  display: flex;
+  gap: 10px;
+}
+
+.control-button {
+  border: 1px solid #ccc;
+  background-color: #eee8;
+  width: 75px;
+  height: 75px;
+  border-radius: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.control-button img {
+  opacity: 0.3;
+  width: 50px;
+}
+
+.clear-tire-marks {
+  cursor: pointer;
+  font-family: inherit;
+  height: 1.5rem;
+  border: 1px solid #ccc;
+  background-color: #eee8;
+  border-radius: 5px;
+  font-size: 12px;
+  padding: 0 8px;
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: none;
+  line-height: 1;
+  color: #333;
+  z-index: 1;
+}

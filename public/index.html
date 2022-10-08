@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, user-scalable=0"
+    />
+    <meta name="description" content="2D drifting game" />
+    <title>drift.js</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <canvas width="100%" height="100%"> </canvas>
+    <div class="overlay">
+      <header>
+        <h1>drift.js</h1>
+        <p class="instructions">Use the arrow keys to drive</p>
+      </header>
+      <button class="clear-tire-marks">Clear tire marks</button>
+      <div class="car">
+        <img class="car-img" src="car.png" draggable="false" />
+      </div>
+      <div class="mobile-controls">
+        <div class="controls-left">
+          <button class="control-button arrow-left">
+            <img src="./arrow-left.png" alt="Left" draggable="false" />
+          </button>
+          <button class="control-button arrow-right">
+            <img src="./arrow-right.png" alt="Right" draggable="false" />
+          </button>
+        </div>
+        <div class="controls-right">
+          <button class="control-button arrow-down">
+            <img src="./arrow-down.png" alt="Brake" draggable="false" />
+          </button>
+          <button class="control-button arrow-up">
+            <img src="./arrow-up.png" alt="Gas" draggable="false" />
+          </button>
+        </div>
+      </div>
+    </div>
+    <script src="drift.js"></script>
+  </body>
+</html>
