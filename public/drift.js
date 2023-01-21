@@ -180,7 +180,7 @@ document.addEventListener("keyup", (e) => {
   }
 });
 
-clearTireMarksRef.addEventListener("click", (e) => {
+clearTireMarksRef.addEventListener("click", () => {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 });
 
@@ -274,12 +274,12 @@ function updateCar() {
 }
 
 // Animation is tied to refresh rate so we need to force 60 FPS
-function limitAnimationLoop(func) {
+function throttleAnimationLoop(func) {
   let then = new Date().getTime();
   let fps = 60;
   let interval = 1000 / fps;
 
-  return (function loop(time) {
+  return (function loop() {
     requestAnimationFrame(loop);
     let now = new Date().getTime();
     let delta = now - then;
@@ -288,7 +288,7 @@ function limitAnimationLoop(func) {
       then = now - (delta % interval);
       func();
     }
-  })(0);
+  })();
 }
 
 function animate() {
@@ -296,7 +296,7 @@ function animate() {
   renderCar();
 }
 
-limitAnimationLoop(animate);
+throttleAnimationLoop(animate);
 
 window.addEventListener("resize", () => {
   canvas.width = window.innerWidth;
