@@ -6,7 +6,7 @@
 
 body {
   color: #333;
-  font-family: "Roboto", sans-serif;
+  font-family: "Inter", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-touch-callout: none;
@@ -90,17 +90,16 @@ h1 {
 .clear-tire-marks {
   cursor: pointer;
   font-family: inherit;
-  height: 1.5rem;
+  height: 2.25rem;
   border: 1px solid #ccc;
   background-color: #eee8;
-  border-radius: 5px;
-  font-size: 12px;
-  padding: 0 8px;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  padding: 0 0.5rem;
   position: absolute;
-  top: 5px;
-  right: 5px;
+  top: 0.5rem;
+  right: 0.5rem;
   display: none;
-  line-height: 1;
   color: #333;
   z-index: 1;
 }
