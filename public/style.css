@@ -73,7 +73,7 @@ h1 {
 
 .control-button {
   border: 1px solid #ccc;
-  background-color: #eee8;
+  background: #eee8;
   width: 75px;
   height: 75px;
   border-radius: 100px;
@@ -92,7 +92,7 @@ h1 {
   font-family: inherit;
   height: 2.5rem;
   border: 1px solid #ccc;
-  background-color: #eee8;
+  background: #eee8;
   border-radius: 2.5rem;
   font-size: 1rem;
   padding: 0 1rem;
