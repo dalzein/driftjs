@@ -90,10 +90,10 @@ h1 {
 .clear-tire-marks {
   cursor: pointer;
   font-family: inherit;
-  height: 2.5rem;
+  height: 2.25rem;
   border: 1px solid #ccc;
   background: #eee8;
-  border-radius: 2.5rem;
+  border-radius: 2.25rem;
   font-size: 1rem;
   padding: 0 1rem;
   position: absolute;

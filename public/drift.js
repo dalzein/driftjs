@@ -62,7 +62,7 @@ if (hasTouchScreen) {
 
   mobileControlsRef.style.display = "flex";
 
-  window.oncontextmenu = function (event) {
+  window.oncontextmenu = (event) => {
     event.preventDefault();
     event.stopPropagation();
     return false;
@@ -103,7 +103,7 @@ if (hasTouchScreen) {
   instructionsRef.innerHTML = "Use the arrow keys to drive!";
 }
 
-function renderCar() {
+const renderCar = () => {
   // Move and rotate the car (div)
   carRef.style.transform = `translate(${car.xPos}px, ${car.yPos}px) rotate(${
     car.angle + car.driftAngle
@@ -158,7 +158,33 @@ function renderCar() {
       2
     );
   }
-}
+};
+
+const accelerate = () => {
+  if (car.speed < carConstants.maxSpeed) {
+    car.speed += carConstants.accelerationFactor;
+  }
+};
+
+const decelerate = () => {
+  if (car.speed > carConstants.maxReverseSpeed) {
+    car.speed -= carConstants.decelerationFactor;
+  }
+};
+
+const left = () => {
+  car.isTurning = true;
+  car.angularVelocity -=
+    carConstants.turnFactor *
+    (controller.ArrowUp.pressed ? 1 : (car.speed / carConstants.maxSpeed) * 2);
+};
+
+const right = () => {
+  car.isTurning = true;
+  car.angularVelocity +=
+    carConstants.turnFactor *
+    (controller.ArrowUp.pressed ? 1 : (car.speed / carConstants.maxSpeed) * 2);
+};
 
 // Controller to allow for simultaneous keypresses
 const controller = {
@@ -184,33 +210,7 @@ clearTireMarksRef.addEventListener("click", () => {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 });
 
-function accelerate() {
-  if (car.speed < carConstants.maxSpeed) {
-    car.speed += carConstants.accelerationFactor;
-  }
-}
-
-function decelerate() {
-  if (car.speed > carConstants.maxReverseSpeed) {
-    car.speed -= carConstants.decelerationFactor;
-  }
-}
-
-function left() {
-  car.isTurning = true;
-  car.angularVelocity -=
-    carConstants.turnFactor *
-    (controller.ArrowUp.pressed ? 1 : (car.speed / carConstants.maxSpeed) * 2);
-}
-
-function right() {
-  car.isTurning = true;
-  car.angularVelocity +=
-    carConstants.turnFactor *
-    (controller.ArrowUp.pressed ? 1 : (car.speed / carConstants.maxSpeed) * 2);
-}
-
-function updateCar() {
+const updateCar = () => {
   Object.keys(controller).forEach((key) => {
     if (controller[key].pressed) {
       controller[key].func();
@@ -271,10 +271,10 @@ function updateCar() {
   }
 
   car.isTurning = false;
-}
+};
 
 // Animation is tied to refresh rate so we need to force 60 FPS
-function throttleAnimationLoop(func) {
+const throttleAnimationLoop = (func) => {
   let then = new Date().getTime();
   let fps = 60;
   let interval = 1000 / fps;
@@ -289,12 +289,12 @@ function throttleAnimationLoop(func) {
       func();
     }
   })();
-}
+};
 
-function animate() {
+const animate = () => {
   updateCar();
   renderCar();
-}
+};
 
 throttleAnimationLoop(animate);
 
