@@ -280,7 +280,6 @@ const throttleAnimationLoop = (func) => {
   let interval = 1000 / fps;
 
   return (function loop() {
-    requestAnimationFrame(loop);
     let now = new Date().getTime();
     let delta = now - then;
 
@@ -288,6 +287,8 @@ const throttleAnimationLoop = (func) => {
       then = now - (delta % interval);
       func();
     }
+
+    requestAnimationFrame(loop);
   })();
 };
 
