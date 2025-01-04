@@ -300,6 +300,6 @@ const animate = () => {
 throttleAnimationLoop(animate);
 
 window.addEventListener("resize", () => {
-  canvas.width = window.innerWidth;
+  canvas.width = document.documentElement.clientWidth;
   canvas.height = window.innerHeight;
 });
