@@ -48,8 +48,8 @@ const carConstants = {
   turnFactor: 0.15,
 };
 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+canvas.width = canvas.clientWidth;
+canvas.height = canvas.clientHeight;
 
 // Determine if device is mobile
 if ("maxTouchPoints" in navigator) {
