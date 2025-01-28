@@ -115,7 +115,7 @@ const renderCar = () => {
     (controller.ArrowUp.pressed && car.speed < 4) ||
     (controller.ArrowDown.pressed && car.speed > -2)
   ) {
-    ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
+    ctx.fillStyle = "hsl(0 0% 0% / 75%)";
 
     // Calculate back tire positions and add a mark
     ctx.fillRect(
