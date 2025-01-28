@@ -1,3 +1,11 @@
+:root {
+  --background: hsl(0 0% 98%);
+  --foreground: hsl(0 0% 0%);
+  --accent-1: hsl(0 0% 100%);
+  --accent-2: hsl(0 0% 96%);
+  --accent-3: hsl(0 0% 92%);
+}
+
 * {
   padding: 0;
   margin: 0;
@@ -5,7 +13,8 @@
 }
 
 body {
-  color: #333;
+  color: var(--foreground);
+  background: var(--background);
   font-family: "Inter", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -26,10 +35,12 @@ canvas {
 }
 
 header {
-  max-width: 400px;
   display: block;
   margin: auto;
-  top: 20px;
+  top: 2rem;
+  gap: 0.5rem;
+  display: flex;
+  flex-direction: column;
   left: 0;
   right: 0;
   text-align: center;
@@ -60,43 +71,43 @@ h1 {
 }
 
 .mobile-controls {
-  padding: 0 5px;
+  padding: 0 0.5rem;
   display: flex;
   justify-content: space-between;
   position: absolute;
   width: 100%;
-  bottom: 5px;
+  bottom: 0.5rem;
   display: none;
 }
 
 .controls-right,
 .controls-left {
   display: flex;
-  gap: 10px;
+  gap: 0.5rem;
 }
 
 .control-button {
-  border: 1px solid #ccc;
-  background: #eee8;
-  width: 75px;
-  height: 75px;
-  border-radius: 100px;
+  border: 1px solid var(--accent-3);
+  background: var(--accent-1);
+  width: 5rem;
+  height: 5rem;
+  border-radius: 5rem;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .control-button img {
-  opacity: 0.3;
-  width: 50px;
+  opacity: 0.5;
+  width: 3rem;
 }
 
 .clear-tire-marks {
   cursor: pointer;
   font-family: inherit;
   height: 2.25rem;
-  border: 1px solid #ccc;
-  background: #eee8;
+  border: 1px solid var(--accent-3);
+  background: var(--accent-1);
   border-radius: 2.25rem;
   font-size: 1rem;
   padding: 0 1rem;
@@ -104,6 +115,6 @@ h1 {
   top: 0.5rem;
   right: 0.5rem;
   display: none;
-  color: #333;
+  color: var(--foreground);
   z-index: 1;
 }
