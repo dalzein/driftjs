@@ -4,7 +4,7 @@
 
 Control the fastest, coolest `<div>` ever 😎
 
-## Build with
+## Built with
 
 - `JavaScript`
 - `CSS`
