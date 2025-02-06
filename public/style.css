@@ -3,7 +3,7 @@
   --foreground: hsl(0 0% 0%);
   --accent-1: hsl(0 0% 100%);
   --accent-2: hsl(0 0% 96%);
-  --accent-3: hsl(0 0% 92%);
+  --border: hsl(0 0% 0% / 0.1);
 }
 
 * {
@@ -87,7 +87,7 @@ h1 {
 }
 
 .control-button {
-  border: 1px solid var(--accent-3);
+  border: 1px solid var(--border);
   background: var(--accent-1);
   width: 5rem;
   height: 5rem;
@@ -106,7 +106,7 @@ h1 {
   cursor: pointer;
   font-family: inherit;
   height: 2.25rem;
-  border: 1px solid var(--accent-3);
+  border: 1px solid var(--border);
   background: var(--accent-1);
   border-radius: 2.25rem;
   font-size: 1rem;
