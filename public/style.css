@@ -63,7 +63,6 @@ canvas {
   pointer-events: auto;
 }
 
-/* Title */
 header {
   position: absolute;
   top: 2rem;
@@ -94,7 +93,6 @@ h1 {
   font-size: 0.95rem;
 }
 
-/* HUD */
 .hud {
   position: absolute;
   top: 1rem;
@@ -156,7 +154,6 @@ h1 {
   opacity: 0.6;
 }
 
-/* Boost meter */
 .boost {
   position: relative;
   width: 130px;
@@ -265,7 +262,6 @@ h1 {
   opacity: 0.7;
 }
 
-/* Top-right buttons */
 .top-buttons {
   position: absolute;
   top: 0.75rem;
@@ -321,7 +317,6 @@ h1 {
   pointer-events: auto;
 }
 
-/* Mobile controls */
 .mobile-controls {
   padding: 0 clamp(0.4rem, 2vw, 0.75rem);
   display: none;

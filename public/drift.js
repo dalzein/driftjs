@@ -282,9 +282,9 @@ function updatePhysics() {
   }
   if (braking) {
     if (forwardV > 1) {
-      forwardV -= TUNING.brakePower * STEP; // brake
+      forwardV -= TUNING.brakePower * STEP;
     } else {
-      forwardV -= TUNING.reversePower * STEP; // reverse
+      forwardV -= TUNING.reversePower * STEP;
     }
   }
   // Coasting rolling resistance (pulls speed toward 0)
