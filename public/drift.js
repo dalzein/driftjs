@@ -65,6 +65,12 @@ const TUNING = {
   wheelspinSpeed: 175, // speed (px/s) below which the tires can break loose
   wheelspinSlip: 0.4, // how much launch traction is lost at full wheelspin (0..1)
 
+  // Burnout — flooring it with the brake on (down+up) from low speed.
+  burnoutMaxSpeed: 60, // only engages below this speed (px/s)
+  burnoutCreep: 0.1, // fraction of engine power that leaks past the brake (slow crawl)
+  burnoutHoldPerSec: 0.05, // forward-speed retained per second while braked (holds it near rest)
+  burnoutTurnRate: 2.6, // pivot rate (rad/s) from the spinning tires while burning out
+
   // Lateral grip — how quickly sideways velocity is killed (fraction kept / sec).
   // Lower = grippier (drift recovers fast). Higher = slidier.
   gripBaseRetainPerSec: 0.12,
@@ -86,12 +92,20 @@ const TUNING = {
   driftTierSeconds: 1.4, // each tier of held drift adds +1 to the multiplier
   driftMaxMultiplier: 10, // multiplier cap
   driftGraceSeconds: 1.2, // window to re-enter a drift before the chain banks
+  linkSlideSpeed: 70, // lateral speed (px/s) that confirms a slide direction (for switchback LINKs)
 
   // Boost (charged by drifting, spent with Shift)
   boostPower: 850, // extra forward acceleration while boosting (px/s^2)
   boostMaxSpeedFactor: 1.5, // boosting raises the speed ceiling by this factor
   boostDrainPerSec: 0.5, // charge spent per second while boosting (full ≈ 2s)
   boostFillRate: 0.22, // charge gained per (slip·second) of drifting
+
+  // Dynamic camera — a gentle pull-OUT at speed/boost (sense of speed), plus a
+  // brief zoom KICK on milestones. No continuous drift zoom-in (it felt queasy).
+  camZoomSpeed: 0.05, // max zoom-OUT from raw speed
+  camZoomBoost: 0.04, // extra zoom-OUT while boosting
+  camZoomPunch: 0.05, // size of the brief zoom kick on tier-up / donut / link
+  camEase: 4, // how fast the zoom eases toward its target (1/s)
 };
 
 /* ----------------------------------------------------------------------------
@@ -116,6 +130,13 @@ const car = {
 
 // Boost charge (0..1), filled by drifting, spent while Shift is held.
 const nitro = { charge: 0, active: false };
+
+// Juice state — tier-up slow-mo, shockwave rings, and boost afterimage ghosts.
+let slowmo = 0; // seconds of tier-up slow motion remaining
+let timeScale = 1; // eased sim time multiplier (dips on tier-up)
+const rings = []; // expanding shockwaves burst from the car on milestones
+const ghosts = []; // fading car silhouettes laid down while boosting
+let ghostTimer = 0;
 
 // Persisted best score / best single chain.
 const STORE_KEY = "driftjs.best";
@@ -254,6 +275,7 @@ const retainStep = (perSec) => Math.pow(perSec, STEP);
 const DRAG_RETAIN = retainStep(TUNING.dragRetainPerSec);
 const GRIP_BASE = retainStep(TUNING.gripBaseRetainPerSec);
 const GRIP_OVERSTEER = retainStep(TUNING.gripPowerOversteer);
+const BURNOUT_HOLD = retainStep(TUNING.burnoutHoldPerSec);
 
 function updatePhysics() {
   // Local unit vectors for the car body
@@ -268,31 +290,45 @@ function updatePhysics() {
   const throttle = input.up ? 1 : 0;
   const braking = input.down ? 1 : 0;
 
+  // Burnout: flooring it with the brake on (down+up) from low speed. The brake
+  // holds the car to a slow crawl while the rear tires spin freely. Release the
+  // brake and the built-up spin launches you still slipping; steer to pivot on
+  // the spot (handled in the steering section below).
+  const speedNow = Math.hypot(forwardV, lateralV);
+  const burnout = throttle && braking && speedNow < TUNING.burnoutMaxSpeed;
+
   // --- Longitudinal forces ---
   // Wheelspin: high when flooring it from low speed, fading to 0 as the tires
   // gain enough rolling speed to hook up. Drives traction loss + smoke + sound.
-  const wheelspin =
+  let wheelspin =
     throttle && forwardV >= 0
       ? clamp(1 - forwardV / TUNING.wheelspinSpeed, 0, 1)
       : 0;
-  if (throttle) {
-    // Spinning tires put less power down, so the launch slips then surges.
-    const traction = 1 - wheelspin * TUNING.wheelspinSlip;
-    forwardV += TUNING.enginePower * traction * STEP;
-  }
-  if (braking) {
-    if (forwardV > 1) {
-      forwardV -= TUNING.brakePower * STEP;
-    } else {
-      forwardV -= TUNING.reversePower * STEP;
+  if (burnout) wheelspin = 1; // tires fully alight while braked
+
+  if (burnout) {
+    forwardV += TUNING.enginePower * TUNING.burnoutCreep * STEP; // a little leaks past the brake
+    forwardV *= BURNOUT_HOLD; // brake torque holds it near rest
+  } else {
+    if (throttle) {
+      // Spinning tires put less power down, so the launch slips then surges.
+      const traction = 1 - wheelspin * TUNING.wheelspinSlip;
+      forwardV += TUNING.enginePower * traction * STEP;
     }
-  }
-  // Coasting rolling resistance (pulls speed toward 0)
-  if (!throttle && !braking) {
-    const rr = TUNING.rollingResist * STEP;
-    if (forwardV > rr) forwardV -= rr;
-    else if (forwardV < -rr) forwardV += rr;
-    else forwardV = 0;
+    if (braking) {
+      if (forwardV > 1) {
+        forwardV -= TUNING.brakePower * STEP;
+      } else {
+        forwardV -= TUNING.reversePower * STEP;
+      }
+    }
+    // Coasting rolling resistance (pulls speed toward 0)
+    if (!throttle && !braking) {
+      const rr = TUNING.rollingResist * STEP;
+      if (forwardV > rr) forwardV -= rr;
+      else if (forwardV < -rr) forwardV += rr;
+      else forwardV = 0;
+    }
   }
   // Boost — drains charge for a forward surge and a raised speed ceiling.
   nitro.active = input.boost && nitro.charge > 0;
@@ -322,10 +358,16 @@ function updatePhysics() {
 
   // --- Steering ---
   const steerInput = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-  // Steering authority grows with speed then saturates, and flips in reverse.
-  const speedAuthority = clamp(Math.abs(forwardV) / TUNING.steerSpeedRef, 0, 1);
-  const dir = forwardV >= 0 ? 1 : -1;
-  const targetTurn = steerInput * TUNING.maxTurnRate * speedAuthority * dir;
+  let targetTurn;
+  if (burnout) {
+    // Pivot on the spot — authority comes from the spinning tires, not speed.
+    targetTurn = steerInput * TUNING.burnoutTurnRate;
+  } else {
+    // Steering authority grows with speed then saturates, and flips in reverse.
+    const speedAuthority = clamp(Math.abs(forwardV) / TUNING.steerSpeedRef, 0, 1);
+    const dir = forwardV >= 0 ? 1 : -1;
+    targetTurn = steerInput * TUNING.maxTurnRate * speedAuthority * dir;
+  }
 
   // Self-stabilising yaw: the slide nudges the nose toward the velocity vector,
   // which is what makes the drift catchable rather than a spin-out.
@@ -393,16 +435,6 @@ function wheelPositions() {
  * ------------------------------------------------------------------------- */
 let prevWheels = null;
 
-// Maps the active drift multiplier to a "heat" colour: neutral rubber at x1,
-// warming through orange to a hot near-white as the combo climbs.
-function comboColor(mult, alpha) {
-  if (mult <= 1) return `hsl(0 0% 10% / ${alpha})`;
-  const t = clamp((mult - 1) / (TUNING.driftMaxMultiplier - 1), 0, 1);
-  const hue = 38 - t * 30; // orange -> red
-  const light = 46 + t * 24; // brighter the hotter the combo
-  return `hsl(${hue} 100% ${light}% / ${alpha})`;
-}
-
 function drawSkids() {
   const wheels = wheelPositions();
 
@@ -418,10 +450,10 @@ function drawSkids() {
       : burnout
       ? clamp(car.wheelspin, 0.3, 0.9)
       : 0.5;
+
+    // Rubber is always near-black — it's a clean record of the line you carved.
     tctx.lineCap = "round";
-    // Hotter combos lay hotter-coloured rubber (only while a chain is live).
-    const mult = score.chainActive ? score.multiplier : 1;
-    tctx.strokeStyle = comboColor(mult, 0.18 + intensity * 0.32);
+    tctx.strokeStyle = `hsl(0 0% 12% / ${(0.18 + intensity * 0.32).toFixed(3)})`;
     tctx.lineWidth = 3.2;
     tctx.beginPath();
     for (let i = 0; i < wheels.length; i++) {
@@ -474,6 +506,29 @@ function spawnEffects() {
   }
 }
 
+// A one-shot puff of extra smoke from the rear wheels — used to punch tier-ups
+// and donuts so the moment feels like it kicks up dust.
+function spawnSmokeBurst(n) {
+  const wheels = wheelPositions();
+  for (const w of wheels) {
+    if (!w.rear) continue;
+    for (let i = 0; i < n; i++) {
+      if (smoke.length >= MAX_SMOKE) smoke.shift();
+      smoke.push({
+        x: w.x + rand(-4, 4),
+        y: w.y + rand(-4, 4),
+        vx: car.vx * 0.05 + rand(-42, 42),
+        vy: car.vy * 0.05 + rand(-42, 42),
+        life: 0,
+        maxLife: rand(0.5, 1.2),
+        size: rand(5, 10),
+        grow: rand(34, 54),
+        mult: score.chainActive ? score.multiplier : 1,
+      });
+    }
+  }
+}
+
 function updateSmoke(dt) {
   for (let i = smoke.length - 1; i >= 0; i--) {
     const p = smoke[i];
@@ -490,19 +545,34 @@ function updateSmoke(dt) {
   }
 }
 
+// The combo "heat" ramp — shared by the smoke and the under-car glow so the
+// whole scene reads in one cohesive palette. Colour is *earned*: a casual x1
+// slide stays neutral grey (ordinary tire smoke), and once you bank a tier the
+// hue sweeps a vibrant arc that pops on the white background — blue at x2 → cyan
+// → green → yellow → orange → red → hot magenta at the cap. Returns whether the
+// colour is active, the eased progress `ct` (0..1 across x2..max), and the hue.
+function comboRamp(mult) {
+  const colored = mult > 1;
+  const ct = clamp((mult - 2) / (TUNING.driftMaxMultiplier - 2), 0, 1);
+  const hue = (((210 - ct * 250) % 360) + 360) % 360;
+  return { colored, ct, hue };
+}
+
 function drawSmoke() {
   for (const p of smoke) {
     const t = p.life / p.maxLife;
-    const alpha = (1 - t) * 0.35;
-    if (p.mult > 1) {
-      // Combo smoke takes on the heat colour but stays light & smokey.
-      const ct = clamp((p.mult - 1) / (TUNING.driftMaxMultiplier - 1), 0, 1);
-      const hue = 36 - ct * 28;
-      const light = 88 - t * 32;
-      gctx.fillStyle = `hsl(${hue} ${50 + ct * 50}% ${light}% / ${alpha})`;
+    const { colored, ct, hue } = comboRamp(p.mult);
+    if (!colored) {
+      // Neutral grey for casual / pre-tier slides — reads as ordinary smoke.
+      const shade = Math.round(228 - t * 55);
+      gctx.fillStyle = `rgba(${shade},${shade},${shade},${((1 - t) * 0.32).toFixed(3)})`;
     } else {
-      const shade = 235 - t * 60;
-      gctx.fillStyle = `rgba(${shade},${shade},${shade},${alpha})`;
+      // Higher combo = more saturated and a touch darker, so the colour really
+      // pops against white. Fade only via alpha so it doesn't wash out with age.
+      const sat = 45 + ct * 50;
+      const light = 68 - ct * 16;
+      const alpha = (1 - t) * (0.3 + ct * 0.15);
+      gctx.fillStyle = `hsl(${hue.toFixed(1)} ${sat.toFixed(0)}% ${light.toFixed(0)}% / ${alpha.toFixed(3)})`;
     }
     gctx.beginPath();
     gctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
@@ -588,7 +658,15 @@ const score = {
   driftTime: 0, // seconds spent actually sliding in this chain (drives multiplier)
   multiplier: 1,
   grace: 0, // countdown; the chain banks when this hits 0
+  spin: 0, // accumulated signed heading rotation while drifting (drives donuts)
+  donutCount: 0, // full 360s landed in this chain (escalates the reward)
+  linkCount: 0, // switchback transitions landed in this chain
 };
+
+// Heading at the previous drift step, for accumulating donut rotation.
+let lastSpinHeading = null;
+// Last confirmed slide side (+1/-1); a flip while the chain is alive = a LINK.
+let driftDir = 0;
 
 function updateScoring() {
   const isDrifting = car.slip > TUNING.driftSlipThreshold && car.speed > 90;
@@ -618,12 +696,63 @@ function updateScoring() {
     if (!input.boost) {
       nitro.charge = Math.min(1, nitro.charge + car.slip * TUNING.boostFillRate * STEP);
     }
+
+    // Donut detection — accumulate signed heading rotation while sliding; every
+    // full turn in one direction lands a donut. Flicking back and forth unwinds
+    // the accumulator, so only sustained same-way spins pay out.
+    if (lastSpinHeading === null) lastSpinHeading = car.heading;
+    let dh = car.heading - lastSpinHeading;
+    dh = Math.atan2(Math.sin(dh), Math.cos(dh)); // shortest signed delta
+    score.spin += dh;
+    lastSpinHeading = car.heading;
+    if (Math.abs(score.spin) >= Math.PI * 2) {
+      score.spin -= Math.sign(score.spin) * Math.PI * 2;
+      awardDonut();
+    }
+
+    // Switchback LINK — once the car is clearly sliding one way, a flip to the
+    // other side without dropping the chain is a transition (the heart of drift
+    // flow). driftDir survives the brief straighten between flicks (we only
+    // reset it when the chain banks), so the opposite slide reads as a link.
+    const side = Math.sign(car.lateralV);
+    if (Math.abs(car.lateralV) > TUNING.linkSlideSpeed && side !== 0) {
+      if (driftDir !== 0 && side !== driftDir) awardLink();
+      driftDir = side;
+    }
   } else if (score.chainActive) {
     // Not sliding right now, but the chain survives through the grace window so
     // transitions (flick left↔right, brief straightens) keep the combo alive.
+    lastSpinHeading = null; // resume rotation tracking cleanly on the next slide
     score.grace -= STEP;
     if (score.grace <= 0) endDrift();
   }
+}
+
+// A landed donut: escalating bonus, a puff, a vignette pop and a rising chime.
+function awardDonut() {
+  score.donutCount++;
+  const tierBonus = Math.min(score.donutCount, 5); // first five donuts ramp the payout
+  score.chainPoints += 750 * score.multiplier * tierBonus;
+  nitro.charge = Math.min(1, nitro.charge + 0.15);
+  const label = score.donutCount > 1 ? `DONUT x${score.donutCount}!` : "DONUT!";
+  addPopup(label, car.x, car.y - 60, "hsl(280 70% 55% / ALPHA)");
+  spawnSmokeBurst(14);
+  spawnRing("hsl(280 70% 60% / ALPHA)", 115, 5);
+  zoomPunch = Math.max(zoomPunch, 1);
+  audio.chime(score.donutCount);
+}
+
+// A landed switchback: bonus, a quick shockwave and a snappy rising blip.
+function awardLink() {
+  score.linkCount++;
+  const tierBonus = Math.min(score.linkCount, 6); // chained links ramp the payout
+  score.chainPoints += 400 * score.multiplier * tierBonus;
+  nitro.charge = Math.min(1, nitro.charge + 0.08);
+  const label = score.linkCount > 1 ? `LINK x${score.linkCount}!` : "LINK!";
+  addPopup(label, car.x, car.y - 46, "hsl(190 90% 45% / ALPHA)");
+  spawnRing("hsl(190 90% 50% / ALPHA)", 70, 3);
+  zoomPunch = Math.max(zoomPunch, 0.55);
+  audio.link(score.linkCount);
 }
 
 // Pulse the multiplier readout and pop a callout whenever a new tier is reached.
@@ -631,7 +760,16 @@ function bumpMultiplier(tier) {
   driftMeterRef.classList.remove("bump");
   void driftMeterRef.offsetWidth; // restart the CSS animation
   driftMeterRef.classList.add("bump");
-  if (tier >= 2) addPopup(`x${tier}!`, car.x, car.y - 52, "hsl(35 100% 45% / ALPHA)");
+  if (tier >= 2) {
+    addPopup(`x${tier}!`, car.x, car.y - 52, "hsl(35 100% 45% / ALPHA)");
+    // Climbing a tier should *feel* like a level-up: a beat of slow motion, a
+    // shockwave ring, a kick of dust and a bass thump that deepens with tier.
+    slowmo = 0.16;
+    spawnRing("hsl(35 100% 55% / ALPHA)", 95, 4);
+    zoomPunch = Math.max(zoomPunch, 1);
+    spawnSmokeBurst(10);
+    audio.thump(clamp(tier / TUNING.driftMaxMultiplier, 0.35, 1));
+  }
 }
 
 function endDrift() {
@@ -647,6 +785,7 @@ function endDrift() {
       car.y - 34,
       "rgba(20,20,20,ALPHA)"
     );
+    audio.cashout(banked); // rising arpeggio that grows with the haul
 
     // Track best score / best single chain, and celebrate beating the record.
     if (banked > best.chain) best.chain = banked;
@@ -661,13 +800,24 @@ function endDrift() {
   score.chainPoints = 0;
   score.driftTime = 0;
   score.multiplier = 1;
+  score.spin = 0;
+  score.donutCount = 0;
+  score.linkCount = 0;
+  lastSpinHeading = null;
+  driftDir = 0;
   driftMeterRef.classList.remove("active");
 }
 
 /* ----------------------------------------------------------------------------
- * Screen shake — magnitude driven by speed + drift intensity, decays smoothly.
+ * Camera — screen shake (speed + drift driven) and a dynamic zoom that pushes in
+ * on hard drifts and pulls out at speed / on boost. Both ride the same viewport
+ * transform. Zoom scales about the viewport centre (the default origin): the car
+ * roams freely and wraps across edges, so a car-anchored origin would jolt the
+ * view on every wrap — centre-anchored stays smooth.
  * ------------------------------------------------------------------------- */
 let shake = 0;
+let zoom = 1;
+let zoomPunch = 0; // 0..1 transient kick, fired on milestones, decays fast
 
 function updateShake(dt) {
   const target =
@@ -677,14 +827,96 @@ function updateShake(dt) {
   shake += (target - shake) * clamp(8 * dt, 0, 1);
 }
 
+function updateCamera(dt) {
+  // Gentle pull-OUT at speed / on boost only — this pulls the off-centre car
+  // inward (safe) and reads as speed. The "kick in" emphasis is the discrete
+  // zoomPunch below, fired on tier-ups / donuts / links.
+  const speedOut =
+    clamp((car.speed - 380) / 240, 0, 1) * TUNING.camZoomSpeed +
+    (car.boosting ? TUNING.camZoomBoost : 0);
+  const target = 1 - speedOut;
+  zoom += (target - zoom) * clamp(TUNING.camEase * dt, 0, 1);
+  if (zoomPunch > 0) zoomPunch = Math.max(0, zoomPunch - dt / 0.22); // ~0.22s settle
+}
+
 function applyShake() {
-  if (shake < 0.15) {
+  const z = zoom + zoomPunch * TUNING.camZoomPunch;
+  const shaking = shake >= 0.15;
+  const zooming = Math.abs(z - 1) > 0.002;
+  if (!shaking && !zooming) {
     viewportRef.style.transform = "";
     return;
   }
-  const dx = rand(-shake, shake);
-  const dy = rand(-shake, shake);
-  viewportRef.style.transform = `translate(${dx}px, ${dy}px)`;
+  const dx = shaking ? rand(-shake, shake) : 0;
+  const dy = shaking ? rand(-shake, shake) : 0;
+  // Scale about the viewport centre (default origin) — robust to the car wrapping.
+  viewportRef.style.transform = `translate(${dx}px, ${dy}px) scale(${z.toFixed(4)})`;
+}
+
+/* ----------------------------------------------------------------------------
+ * Boost afterimages — while boosting, lay down fading silhouettes of the car so
+ * the surge reads as a streak of speed.
+ * ------------------------------------------------------------------------- */
+function updateGhosts(dt) {
+  if (car.boosting) {
+    ghostTimer -= dt;
+    if (ghostTimer <= 0) {
+      ghostTimer = 0.035;
+      ghosts.push({ x: car.x, y: car.y, heading: car.heading, life: 0, maxLife: 0.36 });
+      if (ghosts.length > 40) ghosts.shift();
+    }
+  }
+  for (let i = ghosts.length - 1; i >= 0; i--) {
+    ghosts[i].life += dt;
+    if (ghosts[i].life >= ghosts[i].maxLife) ghosts.splice(i, 1);
+  }
+}
+
+function drawGhosts() {
+  if (!carAsset.complete || !carAsset.naturalWidth) return;
+  for (const g of ghosts) {
+    const a = (1 - g.life / g.maxLife) * 0.32;
+    gctx.save();
+    gctx.globalAlpha = a;
+    gctx.translate(g.x, g.y);
+    gctx.rotate(g.heading);
+    gctx.drawImage(
+      carAsset,
+      -TUNING.carLength / 2,
+      -TUNING.carWidth / 2,
+      TUNING.carLength,
+      TUNING.carWidth
+    );
+    gctx.restore();
+  }
+}
+
+// Shockwave rings — a milestone bursts a coloured ring outward from the car. It
+// stays put in the world (like a real shockwave) and expands as it fades, which
+// reads as a celebratory pop rather than a "damage" edge vignette closing in.
+function spawnRing(color, maxRadius, lineWidth) {
+  rings.push({ x: car.x, y: car.y, life: 0, maxLife: 0.45, color, maxRadius, lineWidth });
+}
+
+function updateRings(dt) {
+  for (let i = rings.length - 1; i >= 0; i--) {
+    rings[i].life += dt;
+    if (rings[i].life >= rings[i].maxLife) rings.splice(i, 1);
+  }
+}
+
+function drawRings() {
+  for (const r of rings) {
+    const t = r.life / r.maxLife;
+    const e = 1 - (1 - t) * (1 - t); // ease-out: fast then settling
+    const radius = 6 + r.maxRadius * e;
+    const a = (1 - t) * 0.65;
+    gctx.strokeStyle = r.color.replace("ALPHA", a.toFixed(3));
+    gctx.lineWidth = r.lineWidth * (1 - t * 0.7);
+    gctx.beginPath();
+    gctx.arc(r.x, r.y, radius, 0, Math.PI * 2);
+    gctx.stroke();
+  }
 }
 
 /* ----------------------------------------------------------------------------
@@ -697,12 +929,17 @@ function drawCar() {
     gctx.translate(x, y);
     gctx.rotate(car.heading);
 
-    // Drift glow under the car — warmer & stronger the harder you slide.
+    // Drift glow under the car — stronger the harder you slide, and tinted by the
+    // same earned combo ramp as the smoke so the car sits inside its own colour.
+    // Casual x1 slides get a neutral warm glow rather than an odd cool tint.
     if (car.slip > TUNING.skidSlipThreshold) {
       const g = clamp(car.slip, 0, 1.2);
+      const { colored, hue } = comboRamp(score.chainActive ? score.multiplier : 1);
+      const gh = colored ? hue : 40; // neutral warm at x1
+      const gs = colored ? 100 : 55; // less saturated when neutral
       const grad = gctx.createRadialGradient(0, 0, 2, 0, 0, 38);
-      grad.addColorStop(0, `hsl(${40 - g * 30} 100% 55% / ${0.25 * g})`);
-      grad.addColorStop(1, "hsl(40 100% 55% / 0)");
+      grad.addColorStop(0, `hsl(${gh.toFixed(1)} ${gs}% 60% / ${0.25 * g})`);
+      grad.addColorStop(1, `hsl(${gh.toFixed(1)} ${gs}% 60% / 0)`);
       gctx.fillStyle = grad;
       gctx.beginPath();
       gctx.arc(0, 0, 38, 0, Math.PI * 2);
@@ -921,6 +1158,91 @@ const audio = {
     this.windGain.gain.setTargetAtTime(car.boosting ? 0.18 : 0, now, 0.06);
   },
 
+  // --- One-shot juice cues (no-ops until the engine has started) ---
+
+  // Deep bass drop for tier-ups — deepens as the multiplier climbs.
+  thump(intensity = 1) {
+    if (!this.started || !this.ctx || !this.enabled) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const o = ctx.createOscillator();
+    o.type = "sine";
+    o.frequency.setValueAtTime(150, now);
+    o.frequency.exponentialRampToValueAtTime(46, now + 0.18);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.5 * intensity, now + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
+    o.connect(g);
+    g.connect(this.master);
+    o.start(now);
+    o.stop(now + 0.34);
+  },
+
+  // Bright bell triad for donuts — pitch climbs with consecutive donuts.
+  chime(step = 1) {
+    if (!this.started || !this.ctx || !this.enabled) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const base = 520 * Math.pow(2, Math.min(step - 1, 6) / 12);
+    [0, 4, 7].forEach((semi, k) => {
+      const o = ctx.createOscillator();
+      o.type = "triangle";
+      o.frequency.value = base * Math.pow(2, semi / 12);
+      const g = ctx.createGain();
+      const t0 = now + k * 0.05;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.24, t0 + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.35);
+      o.connect(g);
+      g.connect(this.master);
+      o.start(t0);
+      o.stop(t0 + 0.4);
+    });
+  },
+
+  // Rising arpeggio when a chain banks — longer & higher the bigger the haul.
+  cashout(banked) {
+    if (!this.started || !this.ctx || !this.enabled) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const notes = banked > 5000 ? [0, 4, 7, 12, 16] : banked > 1500 ? [0, 4, 7, 12] : [0, 7];
+    notes.forEach((semi, k) => {
+      const o = ctx.createOscillator();
+      o.type = "triangle";
+      o.frequency.value = 440 * Math.pow(2, semi / 12);
+      const g = ctx.createGain();
+      const t0 = now + k * 0.06;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.22, t0 + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.3);
+      o.connect(g);
+      g.connect(this.master);
+      o.start(t0);
+      o.stop(t0 + 0.34);
+    });
+  },
+
+  // Snappy rising blip for switchback links — pitch climbs with the link count.
+  link(step = 1) {
+    if (!this.started || !this.ctx || !this.enabled) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const base = 600 * Math.pow(2, Math.min(step - 1, 8) / 12);
+    const o = ctx.createOscillator();
+    o.type = "triangle";
+    o.frequency.setValueAtTime(base, now);
+    o.frequency.exponentialRampToValueAtTime(base * 1.5, now + 0.09);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.2, now + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+    o.connect(g);
+    g.connect(this.master);
+    o.start(now);
+    o.stop(now + 0.2);
+  },
+
   setEnabled(on) {
     this.enabled = on;
     if (this.master) {
@@ -970,25 +1292,36 @@ function frame(now) {
   last = now;
   if (dt > 0.1) dt = 0.1; // avoid spiral of death after a tab is backgrounded
 
-  acc += dt;
+  // Tier-up slow motion: ease the sim's time scale down for a beat, then back.
+  if (slowmo > 0) slowmo = Math.max(0, slowmo - dt);
+  const targetScale = slowmo > 0 ? 0.78 : 1;
+  timeScale += (targetScale - timeScale) * clamp(12 * dt, 0, 1);
+  const sdt = dt * timeScale;
+
+  acc += sdt;
   while (acc >= STEP) {
     updatePhysics();
     drawSkids(); // sampled at physics rate for smooth continuous marks
     acc -= STEP;
   }
 
-  // Per-frame updates (frame-rate based, dt-correct)
+  // Per-frame updates (slowed effects use sdt; visual decays use real dt)
   spawnEffects();
-  updateSmoke(dt);
-  updatePopups(dt);
-  updateShake(dt);
+  updateSmoke(sdt);
+  updatePopups(sdt);
+  updateShake(sdt);
+  updateCamera(dt);
+  updateGhosts(dt);
+  updateRings(dt);
   updateHud(dt);
   audio.update();
 
   // Render the dynamic layer
   gctx.clearRect(0, 0, viewW, viewH);
   drawSmoke();
+  drawGhosts(); // boost afterimages behind the car
   drawCar();
+  drawRings(); // shockwave bursts on tier-ups / donuts / links
   drawSpeedLines();
   drawPopups();
   applyShake();
